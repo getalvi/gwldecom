@@ -1,5 +1,8 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import { Heart } from "lucide-react";
 import { formatBDT } from "@/lib/utils";
 
@@ -13,6 +16,8 @@ export interface ProductCardData {
 }
 
 export function ProductCard({ product, priority = false }: { product: ProductCardData; priority?: boolean }) {
+  const [wishlisted, setWishlisted] = useState(false);
+
   const cover = [...(product.product_images ?? [])].sort((a, b) => a.position - b.position)[0];
   const discount = product.compare_at_price && product.compare_at_price > product.price
     ? Math.round((1 - product.price / product.compare_at_price) * 100)
@@ -41,11 +46,18 @@ export function ProductCard({ product, priority = false }: { product: ProductCar
             </span>
           )}
           <button
-            onClick={(e) => { e.preventDefault(); }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setWishlisted(v => !v);
+            }}
             className="absolute right-2 top-2 rounded-full bg-white/90 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white shadow-sm"
             aria-label="Add to wishlist"
           >
-            <Heart size={14} className="text-muted-foreground hover:text-primary transition-colors" />
+            <Heart
+              size={14}
+              className={wishlisted ? "fill-primary text-primary" : "text-muted-foreground"}
+            />
           </button>
         </div>
         <div className="p-3 space-y-1">
@@ -56,9 +68,8 @@ export function ProductCard({ product, priority = false }: { product: ProductCar
               <span className="text-xs text-muted-foreground line-through">{formatBDT(product.compare_at_price)}</span>
             )}
           </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            {[1,2,3,4,5].map(s => <span key={s} className="text-warning">★</span>)}
-            <span className="ml-1">(0)</span>
+          <div className="flex items-center gap-0.5 text-xs text-warning">
+            {"★★★★★"}<span className="text-muted-foreground ml-1">(0)</span>
           </div>
         </div>
       </div>
