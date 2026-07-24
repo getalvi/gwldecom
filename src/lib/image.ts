@@ -1,8 +1,8 @@
 import "server-only";
 import sharp from "sharp";
 
-const MAX_DIMENSION = 1600; // px — plenty for product zoom, keeps file size down
-const WEBP_QUALITY = 78; // sweet spot for product photography
+const MAX_DIMENSION = 1600;
+const WEBP_QUALITY = 78;
 
 export interface ProcessedImage {
   buffer: Buffer;
@@ -12,13 +12,8 @@ export interface ProcessedImage {
   bytes: number;
 }
 
-/**
- * Compresses and converts an uploaded image to WebP, capped at MAX_DIMENSION
- * on the longest edge. This runs before every upload to Supabase Storage to
- * minimize storage + bandwidth usage on the free tier.
- */
 export async function processProductImage(input: Buffer): Promise<ProcessedImage> {
-  const pipeline = sharp(input, { failOn: "none" }).rotate(); // auto-orient from EXIF
+  const pipeline = sharp(input, { failOn: "none" }).rotate();
 
   const metadata = await pipeline.metadata();
   const needsResize =
@@ -28,7 +23,9 @@ export async function processProductImage(input: Buffer): Promise<ProcessedImage
     ? pipeline.resize({ width: MAX_DIMENSION, height: MAX_DIMENSION, fit: "inside", withoutEnlargement: true })
     : pipeline;
 
-  const output = await resized.webp({ quality: WEBP_QUALITY, effort: 4 }).toBuffer({ resolveWithObject: true });
+  const output = await resized
+    .webp({ quality: WEBP_QUALITY, effort: 4 })
+    .toBuffer({ resolveWithObject: true });
 
   return {
     buffer: output.data,
@@ -39,12 +36,11 @@ export async function processProductImage(input: Buffer): Promise<ProcessedImage
   };
 }
 
-/** Basic server-side guardrails before we ever run sharp on user input. */
 export function assertValidImageUpload(file: { size: number; type: string }) {
-  const MAX_BYTES = 10 * 1024 * 1024; // 10MB upload cap
-  const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  const MAX_BYTES = 10 * 1024 * 1024;
+  const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
   if (!ALLOWED.includes(file.type)) {
-    throw new Error(`Unsupported image type: ${file.type}`);
+    throw new Error(`Unsupported image type: ${file.type}. Allowed: JPEG, PNG, WebP, GIF`);
   }
   if (file.size > MAX_BYTES) {
     throw new Error("Image exceeds 10MB upload limit");

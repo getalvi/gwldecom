@@ -6,7 +6,7 @@
   :root {
     --background: 0 0% 100%;
     --foreground: 222 47% 11%;
-    --primary: 349 89% 45%;           /* Daraz-style red/orange accent */
+    --primary: 349 89% 45%;
     --primary-foreground: 0 0% 100%;
     --secondary: 210 40% 96%;
     --secondary-foreground: 222 47% 11%;
@@ -16,12 +16,37 @@
     --destructive-foreground: 0 0% 100%;
     --border: 214 32% 91%;
     --radius: 0.5rem;
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
   }
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+    --primary: 349 89% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --border: 217 33% 22%;
+  }
+  * { @apply border-border; box-sizing: border-box; }
+  body { @apply bg-background text-foreground antialiased; }
+  html { scroll-behavior: smooth; }
+}
 
-  * {
-    @apply border-border;
+@layer components {
+  .skeleton {
+    @apply animate-pulse bg-muted rounded;
   }
-  body {
-    @apply bg-background text-foreground antialiased;
+  .shimmer {
+    background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--secondary)) 50%, hsl(var(--muted)) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
   }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
