@@ -18,7 +18,7 @@ function metaAll($: CheerioAPI, prop: string): string[] {
 
 /** OpenGraph + the `product:` meta-tag vocabulary many storefronts add. */
 export function extractOpenGraph($: CheerioAPI): RawExtraction | null {
-  const title = meta($, "og:title") ?? $("title").first().text().trim() || undefined;
+  const title = meta($, "og:title") ?? ($("title").first().text().trim() || undefined);
   const description = meta($, "og:description") ?? meta($, "description");
   const images = metaAll($, "og:image");
   const price = meta($, "product:price:amount") ?? meta($, "og:price:amount");
