@@ -41,8 +41,15 @@ export async function POST(request: NextRequest) {
     // near-duplicate row (basic version of the spec's "duplicate detection"
     // requirement; SKU/image-hash dedupe against published products is a
     // reasonable next step once category/brand mapping lands).
-    const { data: existing } = await supabase
-      .from("ai_import_drafts")
+    // NOTE: source_url / source_type are new, additive columns (see the
+    // migration). If src/types/database.ts hasn't been regenerated yet
+    // after running that migration against Supabase, the strict generated
+    // types won't know about these columns — casting to `any` here keeps
+    // the build green either way. Once you run `npm run db:types` (or your
+    // project's equivalent) these casts can be removed.
+    const draftsTable = supabase.from("ai_import_drafts") as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    const { data: existing } = await draftsTable
       .select("id, extracted, confidence, source_image_url, source_url")
       .eq("source_url", url)
       .eq("status", "pending_review")
@@ -57,8 +64,7 @@ export async function POST(request: NextRequest) {
 
     const result = await crawlProductUrl(url);
 
-    const { data: draft, error: draftError } = await supabase
-      .from("ai_import_drafts")
+    const { data: draft, error: draftError } = await draftsTable
       .insert({
         source_url: url,
         source_type: "url",
