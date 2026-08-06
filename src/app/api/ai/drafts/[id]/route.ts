@@ -48,11 +48,17 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       return Response.json({ success: true, status: "rejected" });
     }
 
+    // draft.source_type / draft.source_url are new, additive columns. If the
+    // Supabase generated types (src/types/database.ts) haven't been
+    // regenerated yet after running the migration, TS won't know about them
+    // — this cast keeps the build green either way.
+    const draftRow = draft as typeof draft & { source_type?: string; source_url?: string | null };
+
     // Approve: merge AI extraction with any admin overrides, validate, create product.
     // draft.source_type is a new, additive column (default 'image') — older
     // rows created before URL import existed always take the image branch,
     // so this is unchanged behavior for the existing pipeline.
-    const isUrlImport = draft.source_type === "url";
+    const isUrlImport = draftRow.source_type === "url";
 
     let merged: Record<string, unknown>;
 
