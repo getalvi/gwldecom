@@ -49,30 +49,83 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     }
 
     // Approve: merge AI extraction with any admin overrides, validate, create product.
-    const extracted = draft.extracted as {
-      title: string;
-      description: string;
-      estimatedPriceBDT: number | null;
-      specifications: Record<string, string>;
-      attributes: Record<string, string[]>;
-      tags: string[];
-    };
+    // draft.source_type is a new, additive column (default 'image') — older
+    // rows created before URL import existed always take the image branch,
+    // so this is unchanged behavior for the existing pipeline.
+    const isUrlImport = draft.source_type === "url";
 
-    const merged = {
-      title: body.overrides?.title ?? extracted.title,
-      slug: body.overrides?.slug ?? toSlug(extracted.title),
-      description: body.overrides?.description ?? extracted.description,
-      specifications: body.overrides?.specifications ?? extracted.specifications,
-      attributes: body.overrides?.attributes ?? extracted.attributes,
-      tags: body.overrides?.tags ?? extracted.tags,
-      categoryId: body.overrides?.categoryId ?? null,
-      price: body.overrides?.price ?? extracted.estimatedPriceBDT ?? 0,
-      compareAtPrice: body.overrides?.compareAtPrice ?? null,
-      currency: "BDT",
-      stockQuantity: body.overrides?.stockQuantity ?? 0,
-      status: body.overrides?.status ?? ("pending_review" as const), // still requires a final publish step
-      images: [{ url: draft.source_image_url, altText: extracted.title }],
-    };
+    let merged: Record<string, unknown>;
+
+    if (isUrlImport) {
+      const extracted = draft.extracted as {
+        title: string;
+        description: string;
+        brand: string | null;
+        sku: string | null;
+        price: number | null;
+        currency: string | null;
+        images: string[];
+        specifications: Record<string, string>;
+        attributes: Record<string, string[]>;
+        tags: string[];
+      };
+
+      const images = (extracted.images?.length ? extracted.images : draft.source_image_url ? [draft.source_image_url] : [])
+        .slice(0, 12)
+        .map((url) => ({ url, altText: body.overrides?.title ?? extracted.title }));
+
+      merged = {
+        title: body.overrides?.title ?? extracted.title,
+        slug: body.overrides?.slug ?? toSlug(body.overrides?.title ?? extracted.title),
+        description: body.overrides?.description ?? extracted.description,
+        specifications: body.overrides?.specifications ?? extracted.specifications,
+        attributes: body.overrides?.attributes ?? extracted.attributes,
+        tags: body.overrides?.tags ?? extracted.tags,
+        categoryId: body.overrides?.categoryId ?? null,
+        price: body.overrides?.price ?? extracted.price ?? 0,
+        compareAtPrice: body.overrides?.compareAtPrice ?? null,
+        currency: body.overrides?.currency ?? extracted.currency ?? "BDT",
+        sku: body.overrides?.sku ?? extracted.sku ?? undefined,
+        stockQuantity: body.overrides?.stockQuantity ?? 0,
+        status: body.overrides?.status ?? ("pending_review" as const),
+        images,
+      };
+
+      // Brand/category auto-mapping (creating a brands row, matching an
+      // existing category) is real scope from the original spec that's
+      // intentionally not built in this slice — same "gap list" spirit as
+      // the project README. Surfacing the raw brand string here means it's
+      // never silently lost; wiring it to a real brands table is a follow-up.
+      const specs = merged.specifications as Record<string, string>;
+      if (extracted.brand && !specs["Brand"]) {
+        specs["Brand"] = extracted.brand;
+      }
+    } else {
+      const extracted = draft.extracted as {
+        title: string;
+        description: string;
+        estimatedPriceBDT: number | null;
+        specifications: Record<string, string>;
+        attributes: Record<string, string[]>;
+        tags: string[];
+      };
+
+      merged = {
+        title: body.overrides?.title ?? extracted.title,
+        slug: body.overrides?.slug ?? toSlug(extracted.title),
+        description: body.overrides?.description ?? extracted.description,
+        specifications: body.overrides?.specifications ?? extracted.specifications,
+        attributes: body.overrides?.attributes ?? extracted.attributes,
+        tags: body.overrides?.tags ?? extracted.tags,
+        categoryId: body.overrides?.categoryId ?? null,
+        price: body.overrides?.price ?? extracted.estimatedPriceBDT ?? 0,
+        compareAtPrice: body.overrides?.compareAtPrice ?? null,
+        currency: "BDT",
+        stockQuantity: body.overrides?.stockQuantity ?? 0,
+        status: body.overrides?.status ?? ("pending_review" as const), // still requires a final publish step
+        images: draft.source_image_url ? [{ url: draft.source_image_url, altText: extracted.title }] : [],
+      };
+    }
 
     const parsed = productSchema.safeParse(merged);
     if (!parsed.success) {
@@ -104,12 +157,22 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       return Response.json({ error: insertError.message }, { status });
     }
 
-    await supabase.from("product_images").insert({
-      product_id: product.id,
-      url: draft.source_image_url,
-      alt_text: parsed.data.title,
-      position: 0,
-    });
+    const imagesToInsert = parsed.data.images.length
+      ? parsed.data.images
+      : draft.source_image_url
+        ? [{ url: draft.source_image_url, altText: parsed.data.title }]
+        : [];
+
+    if (imagesToInsert.length > 0) {
+      await supabase.from("product_images").insert(
+        imagesToInsert.map((img, position) => ({
+          product_id: product.id,
+          url: img.url,
+          alt_text: img.altText ?? parsed.data.title,
+          position,
+        }))
+      );
+    }
 
     await supabase
       .from("ai_import_drafts")
