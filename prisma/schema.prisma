@@ -1,72 +1,75 @@
-// Prisma schema — mirrors the requested Supabase schema, adapted for SQLite.
-// Enums are stored as String (SQLite has no native enum). Arrays/jsonb are Json.
-// DO NOT treat this as re-creating the Supabase schema in production — this is
-// the local equivalent used by the Next.js application layer in this sandbox.
+// Prisma schema for ShopHaat — Bangladeshi e-commerce platform
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-// ---------------------------------------------------------------------------
-// Auth & users
-// ---------------------------------------------------------------------------
-
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
+  id            String    @id @default(cuid())
+  email         String    @unique
   passwordHash  String
   fullName      String?
   avatarUrl     String?
   phone         String?
-  role          String   @default("customer") // 'admin' | 'staff' | 'customer'
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  role          String    @default("customer") // admin | staff | customer
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  profile           Profile?
-  createdProducts   Product[]  @relation("ProductCreator")
-  createdPages      Page[]     @relation("PageCreator")
-  orders            Order[]
-  wishlist          Wishlist[]
-  reviews           Review[]
-  addresses         Address[]
-  auditLogs         AuditLog[]
-  questions         ProductQuestion[]
-  abandonedCarts    AbandonedCart[]
+  accounts      Account[]
+  sessions      Session[]
+  products      Product[]      @relation("ProductCreatedBy")
+  orders        Order[]        @relation("OrderCustomer")
+  wishlist      Wishlist[]
+  reviews       Review[]
+  addresses     Address[]
+  auditLogs     AuditLog[]     @relation("AuditActor")
 }
 
-// 1:1 profile row (auto-created conceptually on signup, here we just create both)
-model Profile {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fullName  String?
-  avatarUrl String?
-  phone     String?
-  email     String?
-  role      String   @default("customer")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
 }
 
-// ---------------------------------------------------------------------------
-// Catalog
-// ---------------------------------------------------------------------------
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  @@unique([identifier, token])
+}
 
 model Category {
   id        String     @id @default(cuid())
   name      String
   slug      String     @unique
   parentId  String?
-  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children  Category[] @relation("CategoryTree")
+  parent    Category?  @relation("CategoryParent", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryParent")
   imageUrl  String?
   createdAt DateTime   @default(now())
-
   products  Product[]
 }
 
@@ -76,44 +79,36 @@ model Brand {
   slug      String    @unique
   logoUrl   String?
   createdAt DateTime  @default(now())
-
   products  Product[]
 }
 
 model Product {
-  id              String          @id @default(cuid())
+  id              String         @id @default(cuid())
   title           String
-  slug            String          @unique
-  description     String?
-  specifications  Json?           // jsonb equivalent
-  attributes      Json?           // color/size/variants
-  tags            Json?           // text[] equivalent -> stored as Json array
+  slug            String         @unique
+  description     String         @default("")
+  specifications  String         @default("[]") // JSON [{k,v}]
+  attributes      String         @default("{}") // JSON {color:[...]}
+  tags            String         @default("")
   categoryId      String?
-  category        Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category        Category?      @relation(fields: [categoryId], references: [id])
   brandId         String?
-  brand           Brand?          @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  price           Float
-  compareAtPrice Float?
-  currency        String          @default("BDT")
-  stockQuantity   Int             @default(0)
-  sku             String          @unique
-  status          String          @default("draft") // draft|pending_review|published|archived
-  source          String          @default("manual") // manual|ai_import
-  aiConfidence    Float?
-  createdBy       String?
-  creator         User?     @relation("ProductCreator", fields: [createdBy], references: [id], onDelete: SetNull)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
+  brand           Brand?         @relation(fields: [brandId], references: [id])
+  price           Decimal        @default(0)
+  compareAtPrice  Decimal?
+  currency        String         @default("BDT")
+  stockQuantity   Int            @default(0)
+  sku             String         @unique
+  status          String         @default("draft") // draft|published|archived
+  source          String         @default("manual")
+  createdById     String?
+  createdBy       User?          @relation("ProductCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
   images          ProductImage[]
   reviews         Review[]
-  questions       ProductQuestion[]
-  priceHistory    PriceHistory[]
-  bundleItems     BundleItem[]
-  scheduledUpdates ScheduledUpdate[]
   wishlist        Wishlist[]
   orderItems      OrderItem[]
-  importItems     ImportItem[]
 }
 
 model ProductImage {
@@ -124,32 +119,26 @@ model ProductImage {
   altText   String?
   position  Int      @default(0)
   createdAt DateTime @default(now())
+  @@index([productId])
 }
 
-// ---------------------------------------------------------------------------
-// CMS (WordPress-style block pages)
-// ---------------------------------------------------------------------------
-
 model Page {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   title          String
-  slug           String   @unique
-  blocks         Json?    // [{ id, type, props }]
-  status         String   @default("draft") // draft|published
+  slug           String    @unique
+  blocks         String    @default("[]") // JSON [{id,type,props}]
+  status         String    @default("draft")
   seoTitle       String?
   seoDescription String?
-  createdBy      String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  user           User?    @relation("PageCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
 
 model Banner {
   id        String   @id @default(cuid())
   title     String
   imageUrl  String
-  linkUrl   String?
+  linkUrl   String   @default("#")
   position  Int      @default(0)
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -158,136 +147,43 @@ model Banner {
 model Coupon {
   id             String    @id @default(cuid())
   code           String    @unique
-  type           String    @default("percentage") // percentage|fixed
-  value          Float
-  minOrderAmount Float?
+  type           String    @default("fixed") // percentage|fixed
+  value          Decimal   @default(0)
+  minOrderAmount Decimal   @default(0)
   maxUses        Int?
-  usedCount      Int        @default(0)
+  usedCount      Int       @default(0)
   expiresAt      DateTime?
-  active         Boolean    @default(true)
-  createdAt      DateTime   @default(now())
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
 }
-
-// ---------------------------------------------------------------------------
-// Customer data
-// ---------------------------------------------------------------------------
 
 model Wishlist {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   productId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
-
   @@unique([userId, productId])
 }
 
 model Review {
   id        String   @id @default(cuid())
   productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   rating    Int
-  title     String?
-  body      String?
-  createdAt DateTime @default(now())
-
-  @@unique([productId, userId])
-}
-
-// Customer Q&A on products (question + optional staff/admin answer).
-model ProductQuestion {
-  id        String   @id @default(cuid())
-  productId String
+  title     String   @default("")
+  body      String   @default("")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  question  String
-  answer    String?
-  answeredBy String?
-  answeredAt DateTime?
   createdAt DateTime @default(now())
-}
-
-// Abandoned cart snapshots — clients beacon their cart contents so the admin
-// can see which products are being left in carts (recovery insight).
-model AbandonedCart {
-  id        String   @id @default(cuid())
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  sessionId String?
-  items     Json     // [{ productId, title, price, quantity }]
-  total     Float
-  itemCount Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([updatedAt])
-}
-
-// Price history per product — a snapshot is recorded whenever the price or
-// compareAtPrice changes, so the storefront can show a price-trend chart.
-model PriceHistory {
-  id              String   @id @default(cuid())
-  productId       String
-  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  price           Float
-  compareAtPrice  Float?
-  recordedAt      DateTime @default(now())
-
-  @@index([productId, recordedAt])
-}
-
-// Bundle deal — buy a set of products together, get a percentage discount.
-model BundleDeal {
-  id          String   @id @default(cuid())
-  title       String
-  slug        String   @unique
-  description String?
-  discountPct Float    // percentage off the bundle total
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  items       BundleItem[]
-}
-
-model BundleItem {
-  id         String     @id @default(cuid())
-  bundleId   String
-  bundle     BundleDeal @relation(fields: [bundleId], references: [id], onDelete: Cascade)
-  productId  String
-  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@unique([bundleId, productId])
-}
-
-// Scheduled price/stock update — staff sets a future change; a cron/manual
-// trigger applies it. Keeps an audit trail.
-model ScheduledUpdate {
-  id         String   @id @default(cuid())
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  field      String   // "price" | "stockQuantity" | "compareAtPrice"
-  value      Float
-  applyAt    DateTime
-  applied    Boolean  @default(false)
-  appliedAt  DateTime?
-  createdBy  String?
-  createdAt  DateTime @default(now())
-
-  @@index([applyAt, applied])
-  @@index([productId])
+  @@unique([productId, userId])
 }
 
 model Address {
   id           String   @id @default(cuid())
   userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  label        String?
+  label        String   @default("Home")
   fullName     String
   phone        String
   addressLine1 String
@@ -295,23 +191,23 @@ model Address {
   district     String
   postalCode   String?
   isDefault    Boolean  @default(false)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())
 }
 
 model Order {
-  id             String      @id @default(cuid())
-  customerId     String
-  customer       User        @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  status         String      @default("pending") // pending|confirmed|shipped|delivered|cancelled
-  paymentMethod  String      @default("cod") // cod|sslcommerz|bkash|nagad|rocket
-  paymentStatus  String      @default("unpaid") // unpaid|paid|refunded
-  total          Float
-  shippingAddress Json?      // jsonb snapshot
-  couponCode     String?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-
+  id              String      @id @default(cuid())
+  customerId      String
+  customer        User        @relation("OrderCustomer", fields: [customerId], references: [id])
+  status          String      @default("pending") // pending|confirmed|shipped|delivered|cancelled
+  paymentMethod   String      @default("cod") // cod|bkash|nagad|rocket|sslcommerz
+  paymentStatus   String      @default("unpaid") // unpaid|paid|refunded
+  total           Decimal     @default(0)
+  shippingAddress String      @default("{}") // JSON
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
   items           OrderItem[]
+  @@index([customerId])
 }
 
 model OrderItem {
@@ -319,72 +215,21 @@ model OrderItem {
   orderId   String
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  product   Product  @relation(fields: [productId], references: [id])
   quantity  Int
-  unitPrice Float
+  unitPrice Decimal
+  @@index([orderId])
 }
-
-// ---------------------------------------------------------------------------
-// AI Import (staff/admin only)
-// ---------------------------------------------------------------------------
-
-model AiImportDraft {
-  id           String   @id @default(cuid())
-  imageUrl     String?
-  extractedData Json?   // proposed product fields
-  status       String   @default("pending") // pending|approved|rejected
-  createdBy    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
-model ImportJob {
-  id        String         @id @default(cuid())
-  source    String         // url|bulk|crawl|search|sitemap|api
-  status    String         @default("pending") // pending|running|completed|failed
-  total     Int            @default(0)
-  done      Int            @default(0)
-  createdBy String?
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
-
-  items     ImportItem[]
-  logs      ImportLog[]
-}
-
-model ImportItem {
-  id        String    @id @default(cuid())
-  jobId     String
-  job       ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  productId String?
-  product   Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
-  sourceUrl String?
-  status    String    @default("pending") // pending|imported|failed|skipped
-  data      Json?
-  createdAt DateTime  @default(now())
-}
-
-model ImportLog {
-  id        String    @id @default(cuid())
-  jobId     String
-  job       ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  level     String    @default("info") // info|warn|error
-  message   String
-  createdAt DateTime  @default(now())
-}
-
-// ---------------------------------------------------------------------------
-// Audit (admin read-only, server-side inserts only)
-// ---------------------------------------------------------------------------
 
 model AuditLog {
   id         String   @id @default(cuid())
   actorId    String?
-  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
   action     String
-  entityType String?
+  entityType String
   entityId   String?
-  metadata   Json?
+  metadata   String   @default("{}")
   ipAddress  String?
   createdAt  DateTime @default(now())
+  @@index([entityType, entityId])
 }
