@@ -9,7 +9,7 @@ import { SiteFooter } from "@/components/store/site-footer";
 import { CartDrawer } from "@/components/store/cart-drawer";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-
+export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: { default: "ShopHaat — Bangladesh's Friendly Online Marketplace", template: "%s | ShopHaat" },
   description: "Shop electronics, fashion, home & kitchen, beauty and more on ShopHaat. Genuine products, fast nationwide delivery, cash on delivery.",
