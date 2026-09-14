@@ -3,6 +3,7 @@ import Link from "next/link"
 import type { Metadata } from "next"
 import { db } from "@/lib/db"
 import { safeJsonParse, parseTags, formatBDT } from "@/lib/utils"
+import { generateProductMetadata, notFoundProductMetadata, buildProductImageAlt } from "@/lib/seo"
 import { ProductGallery } from "@/components/store/product-gallery"
 import { ProductOptions, type ProductOption } from "@/components/store/product-options"
 import { ProductCard } from "@/components/store/product-card"
@@ -16,8 +17,21 @@ export const revalidate = 60
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const product = await db.product.findUnique({ where: { slug }, include: { images: { orderBy: { position: "asc" } }, category: true, brand: true } })
-  if (!product) return { title: "Product not found" }
-  return { title: product.title, description: product.description.slice(0, 155) || `Buy ${product.title} on ShopHaat.`, alternates: { canonical: `/product/${product.slug}` } }
+  if (!product || product.status !== "published") return notFoundProductMetadata()
+  return generateProductMetadata({
+    title: product.title,
+    slug: product.slug,
+    description: product.description,
+    price: Number(product.price),
+    currency: product.currency,
+    compareAtPrice: product.compareAtPrice ? Number(product.compareAtPrice) : null,
+    stockQuantity: product.stockQuantity,
+    sku: product.sku,
+    tags: product.tags,
+    images: product.images.map((i) => ({ url: i.url, altText: i.altText })),
+    category: product.category ? { name: product.category.name } : null,
+    brand: product.brand ? { name: product.brand.name } : null,
+  })
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -43,7 +57,18 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         </BreadcrumbList>
       </Breadcrumb>
       <div className="grid gap-8 lg:grid-cols-2">
-        <ProductGallery images={product.images.map((i) => ({ id: i.id, url: i.url, altText: i.altText }))} title={product.title} />
+        <ProductGallery
+          images={product.images.map((i, idx) => ({
+            id: i.id,
+            url: i.url,
+            altText: buildProductImageAlt(
+              { title: product.title, brand: product.brand ? { name: product.brand.name } : null, category: product.category ? { name: product.category.name } : null },
+              { url: i.url, altText: i.altText },
+              idx
+            ),
+          }))}
+          title={product.title}
+        />
         <div>
           {product.brand && <Link href={`/search?q=${encodeURIComponent(product.brand.name)}`} className="text-sm font-medium text-primary hover:underline">{product.brand.name}</Link>}
           <h1 className="mt-1 text-2xl font-bold leading-tight sm:text-3xl">{product.title}</h1>
