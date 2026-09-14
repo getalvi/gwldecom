@@ -9,9 +9,15 @@ export const revalidate = 60
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
-  if (slug === "all") return { title: "All Products" }
+  // ?sort= and ?brand= produce the same content as the plain category URL
+  // in a different order/subset — canonicalizing to the query-free path
+  // stops search engines from indexing each combination as a separate page.
+  const canonicalPath = `/category/${slug}`
+  if (slug === "all") return { title: "All Products", alternates: { canonical: canonicalPath } }
   const cat = await db.category.findUnique({ where: { slug } })
-  return cat ? { title: cat.name, description: `Shop ${cat.name} online on ShopHaat.` } : { title: "Category" }
+  return cat
+    ? { title: cat.name, description: `Shop ${cat.name} online on ShopHaat.`, alternates: { canonical: canonicalPath } }
+    : { title: "Category", alternates: { canonical: canonicalPath } }
 }
 
 export default async function CategoryPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ sort?: string; brand?: string }> }) {
