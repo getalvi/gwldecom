@@ -1,4 +1,5 @@
 import Link from "next/link"
+import type { Metadata } from "next"
 import { db } from "@/lib/db"
 import { HeroCarousel } from "@/components/store/hero-carousel"
 import { ProductCard } from "@/components/store/product-card"
@@ -7,6 +8,13 @@ import { ArrowRight, Flame, Star, Truck, ShieldCheck, BadgePercent, Headphones }
 import { Button } from "@/components/ui/button"
 
 export const revalidate = 60
+
+// Pins the canonical URL to the bare domain so query strings appended by
+// campaigns/trackers (e.g. "/?utm_source=...") aren't treated as separate
+// pages from the homepage.
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+}
 
 export default async function HomePage() {
   const [banners, categories, featuredRaw, flashRaw, brands] = await Promise.all([
