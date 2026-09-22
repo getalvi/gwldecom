@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
-import { Plus, Trash2, Save, ArrowLeft, ImageOff } from "lucide-react"
+import { Plus, Trash2, Save, ArrowLeft, UploadCloud, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -80,6 +80,9 @@ export function ProductForm({
   const [tags, setTags] = useState(initial?.tags ?? "")
   const [images, setImages] = useState<ProductImageInput[]>(initial?.images ?? [])
   const [imageUrl, setImageUrl] = useState("")
+  const [isDraggingImage, setIsDraggingImage] = useState(false)
+  const [isProcessingImages, setIsProcessingImages] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [specifications, setSpecifications] = useState<SpecInput[]>(initial?.specifications ?? [])
   const [attributes, setAttributes] = useState<AttrInput[]>(initial?.attributes ?? [])
 
@@ -93,6 +96,45 @@ export function ProductForm({
     if (!url) return
     setImages((prev) => [...prev, { url, position: prev.length }])
     setImageUrl("")
+  }
+
+  /**
+   * Downscales + compresses a dropped image file client-side and returns it
+   * as a data URL. There's no object-storage backend (S3/Cloudinary/etc.)
+   * wired up yet, and the `images.url` column just stores a string, so this
+   * is the zero-infrastructure way to support real drag-and-drop upload —
+   * the resize keeps each image a reasonable size instead of stuffing a
+   * multi-MB original straight into the database.
+   */
+  async function fileToImageUrl(file: File, maxDim = 1600, quality = 0.82): Promise<string> {
+    const bitmap = await createImageBitmap(file)
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height))
+    const w = Math.max(1, Math.round(bitmap.width * scale))
+    const h = Math.max(1, Math.round(bitmap.height * scale))
+    const canvas = document.createElement("canvas")
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext("2d")
+    if (!ctx) throw new Error("Canvas not supported")
+    ctx.drawImage(bitmap, 0, 0, w, h)
+    const mime = file.type === "image/png" ? "image/png" : "image/jpeg"
+    return canvas.toDataURL(mime, quality)
+  }
+
+  async function handleImageFiles(fileList: FileList | File[]) {
+    const files = Array.from(fileList).filter((f) => f.type.startsWith("image/"))
+    if (!files.length) return
+    setIsProcessingImages(true)
+    try {
+      const results = await Promise.allSettled(files.map((f) => fileToImageUrl(f)))
+      const urls = results.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled").map((r) => r.value)
+      if (urls.length) {
+        setImages((prev) => [...prev, ...urls.map((url, idx) => ({ url, position: prev.length + idx }))])
+      }
+      if (urls.length < files.length) toast.error("Couldn't process one or more images")
+    } finally {
+      setIsProcessingImages(false)
+    }
   }
 
   function buildPayload() {
@@ -199,9 +241,58 @@ export function ProductForm({
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Images</CardTitle>
-            <CardDescription>Paste image URLs. The first image is used as the primary image.</CardDescription>
+            <CardDescription>Drag & drop image files, or paste a URL. The first image is used as the primary image.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length) handleImageFiles(e.target.files)
+                e.target.value = ""
+              }}
+            />
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click()
+              }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                setIsDraggingImage(true)
+              }}
+              onDragLeave={() => setIsDraggingImage(false)}
+              onDrop={(e) => {
+                e.preventDefault()
+                setIsDraggingImage(false)
+                if (e.dataTransfer.files?.length) handleImageFiles(e.dataTransfer.files)
+              }}
+              className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed py-8 text-center text-sm transition-colors ${
+                isDraggingImage
+                  ? "border-primary bg-primary/5 text-primary"
+                  : "border-muted-foreground/25 text-muted-foreground hover:border-muted-foreground/40 hover:bg-muted/40"
+              }`}
+            >
+              {isProcessingImages ? (
+                <>
+                  <Loader2 className="size-6 animate-spin" />
+                  Processing image…
+                </>
+              ) : (
+                <>
+                  <UploadCloud className="size-6" />
+                  <span>
+                    <span className="font-medium text-foreground">Drag & drop images</span> here, or click to browse
+                  </span>
+                  <span className="text-xs">PNG, JPG or WEBP</span>
+                </>
+              )}
+            </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 value={imageUrl}
@@ -212,18 +303,13 @@ export function ProductForm({
                     addImage()
                   }
                 }}
-                placeholder="https://…/image.jpg"
+                placeholder="…or paste an image URL: https://…/image.jpg"
               />
               <Button type="button" variant="outline" onClick={addImage} className="shrink-0">
                 <Plus className="size-4" /> Add
               </Button>
             </div>
-            {images.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
-                <ImageOff className="size-6" />
-                No images yet.
-              </div>
-            ) : (
+            {images.length > 0 ? (
               <ul className="space-y-2">
                 {images.map((img, i) => (
                   <li key={`${img.url}-${i}`} className="flex items-center gap-3 rounded-md border p-2">
@@ -254,7 +340,7 @@ export function ProductForm({
                   </li>
                 ))}
               </ul>
-            )}
+            ) : null}
           </CardContent>
         </Card>
 
