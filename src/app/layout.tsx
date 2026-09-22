@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
+import { TopLoader } from "@/components/ui/top-loader";
 import { Providers } from "@/components/providers";
 import { SiteHeader } from "@/components/store/site-header";
 import { SiteFooter } from "@/components/store/site-footer";
@@ -20,6 +22,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} antialiased bg-background text-foreground`}>
+        <Suspense fallback={null}>
+          <TopLoader />
+        </Suspense>
         <Providers>
           <div className="flex min-h-screen flex-col">
             <SiteHeader />
